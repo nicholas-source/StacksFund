@@ -29,3 +29,22 @@
 (define-constant err-invalid-description (err u115))
 (define-constant minimum-duration u144) ;; minimum 1 day (assuming 10min blocks)
 (define-constant maximum-duration u20160) ;; maximum 14 days
+
+;; Data Variables
+(define-data-var total-supply uint u0)
+(define-data-var minimum-deposit uint u1000000) ;; in microSTX
+(define-data-var lock-period uint u1440) ;; ~10 days in blocks
+(define-data-var initialized bool false)
+(define-data-var last-rebalance uint u0)
+(define-data-var proposal-count uint u0)
+
+;; Data Maps
+(define-map balances principal uint)
+(define-map deposits
+    principal
+    {
+        amount: uint,
+        lock-until: uint,
+        last-reward-block: uint
+    }
+)
