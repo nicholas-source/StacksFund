@@ -48,3 +48,19 @@
         last-reward-block: uint
     }
 )
+
+(define-map proposals
+    uint
+    {
+        proposer: principal,
+        description: (string-ascii 256),
+        amount: uint,
+        target: principal,
+        expires-at: uint,
+        executed: bool,
+        yes-votes: uint,
+        no-votes: uint
+    }
+)
+
+(define-map votes {proposal-id: uint, voter: principal} bool)
