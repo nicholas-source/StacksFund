@@ -27,6 +27,8 @@
 (define-constant err-zero-amount (err u113))
 (define-constant err-invalid-target (err u114))
 (define-constant err-invalid-description (err u115))
+(define-constant err-invalid-proposal-id (err u116))
+(define-constant err-invalid-vote (err u117))
 (define-constant minimum-duration u144) ;; minimum 1 day (assuming 10min blocks)
 (define-constant maximum-duration u20160) ;; maximum 14 days
 
@@ -72,6 +74,10 @@
 
 (define-private (check-initialized)
     (ok (asserts! (var-get initialized) err-not-initialized))
+)
+
+(define-private (validate-proposal-id (proposal-id uint))
+    (ok (asserts! (<= proposal-id (var-get proposal-count)) err-invalid-proposal-id))
 )
 
 (define-private (calculate-voting-power (voter principal))
@@ -125,7 +131,8 @@
     (begin
         (try! (check-initialized))
         (asserts! (>= amount (var-get minimum-deposit)) err-below-minimum)
-        
+        (asserts! (> amount u0) err-zero-amount)
+
         ;; Transfer STX to contract
         (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
         
@@ -144,12 +151,14 @@
 (define-public (withdraw (amount uint))
     (begin
         (try! (check-initialized))
-        
+        (asserts! (> amount u0) err-zero-amount)
+
         (let (
             (deposit-info (unwrap! (map-get? deposits tx-sender) err-unauthorized))
+            (user-balance (unwrap! (get-balance tx-sender) err-unauthorized))
         )
             (asserts! (>= block-height (get lock-until deposit-info)) err-locked-period)
-            (asserts! (>= amount u0) err-invalid-amount)
+            (asserts! (>= user-balance amount) err-insufficient-balance)
             
             ;; Burn tokens first
             (try! (burn-tokens tx-sender amount))
@@ -160,7 +169,7 @@
     )
 )
 
-(define-public (create-proposal 
+(define-public (create-proposal
     (description (string-ascii 256))
     (amount uint)
     (target principal)
@@ -168,7 +177,7 @@
 )
     (begin
         (try! (check-initialized))
-        
+
         ;; Input validation
         (asserts! (> (len description) u0) err-invalid-description)
         (asserts! (> amount u0) err-zero-amount)
@@ -202,7 +211,8 @@
 (define-public (vote (proposal-id uint) (vote-for bool))
     (begin
         (try! (check-initialized))
-        
+        (try! (validate-proposal-id proposal-id))
+
         (let (
             (proposal (unwrap! (map-get? proposals proposal-id) err-proposal-not-found))
             (voter-power (calculate-voting-power tx-sender))
@@ -211,7 +221,7 @@
             (asserts! (< block-height (get expires-at proposal)) err-proposal-expired)
             (asserts! (is-none (map-get? votes {proposal-id: proposal-id, voter: tx-sender})) err-already-voted)
             
-            ;; Record vote
+            ;; Record vote after all validations pass
             (map-set votes {proposal-id: proposal-id, voter: tx-sender} vote-for)
             
             ;; Update vote counts
@@ -236,13 +246,16 @@
 (define-public (execute-proposal (proposal-id uint))
     (begin
         (try! (check-initialized))
-        
+        (try! (validate-proposal-id proposal-id))
+
         (let (
             (proposal (unwrap! (map-get? proposals proposal-id) err-proposal-not-found))
+            (contract-balance (stx-get-balance (as-contract tx-sender)))
         )
             (asserts! (not (get executed proposal)) err-unauthorized)
             (asserts! (>= block-height (get expires-at proposal)) err-proposal-expired)
             (asserts! (> (get yes-votes proposal) (get no-votes proposal)) err-unauthorized)
+            (asserts! (>= contract-balance (get amount proposal)) err-insufficient-balance)
             
             ;; Execute proposal (transfer funds)
             (try! (as-contract (stx-transfer? (get amount proposal) (as-contract tx-sender) (get target proposal))))
@@ -269,4 +282,8 @@
 
 (define-read-only (get-deposit-info (account principal))
     (ok (map-get? deposits account))
+)
+
+(define-read-only (get-vote (proposal-id uint) (voter principal))
+    (ok (map-get? votes {proposal-id: proposal-id, voter: voter}))
 )
